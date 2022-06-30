@@ -20,7 +20,15 @@ void* thread_body_1(void* arg) {
 	//(*shared_var_ptr)++;
 	//printf("%d\n", *shared_var_ptr);
 
-    while() {
+    while(1) {
+
+        int fd = wiringPiI2CSetup(BME280_ADDRESS);
+
+            if (fd < 0) {
+                printf("Device not found");
+                return -1;
+                }
+
         bme280_calib_data cal;
         readCalibrationData(fd, &cal);
 
@@ -33,7 +41,9 @@ void* thread_body_1(void* arg) {
         int32_t t_fine = getTemperatureCalibration(&cal, raw.temperature);
         float t = compensateTemperature(t_fine); // C
 
-        printf("{\"sensor\":\"bme280\", \"temperature\":%.2f, \"Hora\":%d}\n", t, time()); 
+        printf("************ TEMPERATURA:%.2f ************\n", t); 
+
+        delay(10000);
     }
 
 	return NULL;
@@ -50,13 +60,6 @@ void* thread_body_3(void* arg) {
 }
 
 int main() {
-    
-    int fd = wiringPiI2CSetup(BME280_ADDRESS);
-
-    if (fd < 0) {
-        printf("Device not found");
-        return -1;
-        }
 
     int res = wiringPiSetup();
 
@@ -68,7 +71,7 @@ int main() {
     int PID = fork();
     if (PID) {
         //Cambiar a proceso B
-    } else if {
+    } else {
         printf("Proceso A en ejecución... \n");
         
         pthread_t thread1;
@@ -79,6 +82,19 @@ int main() {
 	    int result2 = pthread_create(&thread2, NULL, thread_body_2, NULL);
         int result3 = pthread_create(&thread3, NULL, thread_body_3, NULL);
 
+    	if (result1 || result2 || result3) {
+		printf("No se creó.\n");
+		exit(2);
+	}
+
+        result1 = pthread_join(thread1, NULL);
+        result2 = pthread_join(thread2, NULL);
+    	result3 = pthread_join(thread3, NULL);
+
+        if (result1 || result2 ||result3) {
+		printf("The threads could not be joined.\n");
+		exit(2);
+	}
     }
 
 }
