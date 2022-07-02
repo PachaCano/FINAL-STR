@@ -22,69 +22,79 @@
 #define LED_PIN_RED 1  // 12
 #define LED_PIN_BLUE 4  // 16
 
+#define MC_SIZE sizeof(int)
+int memoria_comp = -1;
+
 int fixedTemp = 20; // Temperatura que variará según los pulsadores.
+float tempActual = 0; // Temperatura actual.
 
 pthread_mutex_t mtx;
+int PID = -1;
+int* ptrMemComp = -1;
 
 int FD, ticks = 0, ticks2 = 0, ticks3 = 0;
 bool flag = false;
 bool flag2 = false;
 
-//Controlamos que los ticks 2 y 3 sólo aumenten cuando los pulsadores estén pulsados
+// Controlamos que los ticks 2 y 3 sólo aumenten cuando los pulsadores estén pulsados
 void isrTimer (int sig, siginfo_t *si, void *uc) {
     ticks++;
-    if (flag) {
+    if (flag) 
         ticks2++;
-    }
-    if (flag2) {
+    if (flag2) 
         ticks3++;
-    }
 }
 
 // Hilo que lee temperatura
-void *thread_body_1(void *arg) {
+void threadTemp() {
+
+    bme280_calib_data cal;
+    bme280_raw_data raw;
 
     while (1) {
-
-        if (ticks == 50) {
-            bme280_calib_data cal;
+        if (ticks == 50) {  // Cada 5 segundos
+            
+            // Calibración de la temperatura
             readCalibrationData(FD, &cal);
 
             // Setea la frecuencia y modo de SAMPLING
             wiringPiI2CWriteReg8(FD, 0xf2, 0x01); // Registro sensor ctrl_hum
             wiringPiI2CWriteReg8(FD, 0xf4, 0x25); // Registro sensor ctrl_meas
 
-            bme280_raw_data raw;
+            // Obtención de los datos crudos
             getRawData(FD, &raw);
 
+            // Calculo de la temperatura EN CELSIUS
             int32_t t_fine = getTemperatureCalibration(&cal, raw.temperature);
-            float t = compensateTemperature(t_fine); // C
+            tempActual = compensateTemperature(t_fine); 
 
-            printf("************ TEMPERATURA:%.2f \t FIXED_TEMP %d ************\n", t, fixedTemp);
+            // Dependiendo de la temperatura actual, se mandará una señal al proceso B
+            powerOnOffMotor();
+
+            printf("************ TEMPERATURA:%.2f \t FIXED_TEMP %d ************\n", tempActual, fixedTemp);
             ticks = 0;
         }
     }
 
-    return NULL;
 }
 
-void *thread_body_2(void *arg) {
+void threadPlusTemp(void *arg) {
 
     bool pulsado = false;
     int pulsador = 0;
-
     int* ptrFixedTemp = (int*) arg;
 
     while (1) {
         pulsador = digitalRead(PULSER_PIN_PLUS);
 
-        //Si no estaba pulsado (antes), pero ahora sí
+        // Si no estaba pulsado (antes), pero ahora sí
         if (pulsado == false && pulsador == 1) {
 
                 pthread_mutex_lock(&mtx);
+
                 if ((*ptrFixedTemp) < LIM_MAX_TEMP) {
                     (*ptrFixedTemp)++;
-                    printf("temperatura: %d\n", *ptrFixedTemp);
+                    // printf("temperatura: %d\n", *ptrFixedTemp);
                 } else {
                     printf("SE LLEGO AL LIMITE SUPERIOR\n");
                     digitalWrite(LED_PIN_RED, HIGH);
@@ -109,17 +119,15 @@ void *thread_body_2(void *arg) {
                             break;
                         }
                     } 
-        //Si estaba pulsado (antes), y ya no
-        } else if (pulsado == true && pulsador == 0) {
-                pulsado = false;
-        } 
 
+        // Si estaba pulsado (antes), y ya no
+        } else if (pulsado == true && pulsador == 0) 
+            pulsado = false;
+        
     }
-
-    return NULL;
 }
 
-void *thread_body_3(void *arg) {
+void threadMinusTemp(void *arg) {
 
     bool pulsado = false;
     int pulsador = 0;
@@ -133,7 +141,7 @@ void *thread_body_3(void *arg) {
                 pthread_mutex_lock(&mtx);
                 if ((*ptrFixedTemp) > LIM_MIN_TEMP) {
                     (*ptrFixedTemp)--;
-                    printf("temperatura: %d\n", *ptrFixedTemp);
+                    // printf("temperatura: %d\n", *ptrFixedTemp);
                 } else {
                     printf("LIMITE INFERIOR\n");
                     digitalWrite(LED_PIN_BLUE, HIGH);
@@ -159,13 +167,38 @@ void *thread_body_3(void *arg) {
                         }
                     }
             
-        } else if (pulsado == true && pulsador == 0) {
-                pulsado = false;
-        } 
-
+        } else if (pulsado == true && pulsador == 0) 
+            pulsado = false;
+        
     }
+}
 
-    return NULL;
+void powerOnOffMotor() {
+    if (tempActual < fixedTemp) {   // Si la temperatura es menor a la fijada, se enciende el motor, es decir, se enciende la calefacción.
+        kill(PID, SIGUSR1);
+        *ptrMemComp = 1;
+    } else {                        // Si la temperatura es mayor a la fijada, se apaga el motor, es decir, se apaga la calefacción.
+        kill(PID, SIGUSR2);
+        *ptrMemComp = 0;
+    }
+}
+
+void initMemoryComp() {
+    memoria_comp = shm_open("/shm0", O_CREAT | O_RDWR, 0600);
+    if (memoria_comp == -1) {
+        printf("Error al crear la memoria compartida\n");
+        exit(1);
+    }
+    if (ftruncate(memoria_comp, MC_SIZE) == -1) {
+        printf("Error al truncar la memoria compartida\n");
+        exit(1);
+    }
+    void *ptr = mmap(0, MC_SIZE, PROT_WRITE, MAP_SHARED, memoria_comp, 0);
+    if (ptr == MAP_FAILED) {
+        printf("Error al mapear la memoria compartida\n");
+        exit(1);
+    }
+    ptrMemComp = (int*) ptr;
 }
 
 int main() {
@@ -184,13 +217,13 @@ int main() {
         return 1;
     }
 
-    //Seteamos el modo de los pines
+    // Seteamos el modo de los pines
     pinMode(PULSER_PIN_MINUS, INPUT);
     pinMode(PULSER_PIN_PLUS, INPUT);
     pinMode(LED_PIN_BLUE, OUTPUT);
     pinMode(LED_PIN_RED, OUTPUT);
 
-    //Inicializamos los leds 
+    // Inicializamos los leds 
     digitalWrite(LED_PIN_BLUE, LOW);
     digitalWrite(LED_PIN_RED, LOW);
 
@@ -220,17 +253,19 @@ int main() {
     if (timer_settime(timerid, 0, &its, NULL) == -1)
         printf("error timer_settime");
 
-    int PID = fork();
+    PID = fork();
 
     if (PID != 0) { // PADRE -> 
+    
+        initMemoryComp();
 
         pthread_t thread1;
         pthread_t thread2;
         pthread_t thread3;
 
-        int result1 = pthread_create(&thread1, NULL, thread_body_1, NULL);
-        int result2 = pthread_create(&thread2, NULL, thread_body_2, &fixedTemp);
-        int result3 = pthread_create(&thread3, NULL, thread_body_3, &fixedTemp);
+        int result1 = pthread_create(&thread1, NULL, threadTemp, NULL);
+        int result2 = pthread_create(&thread2, NULL, threadPlusTemp, &fixedTemp);
+        int result3 = pthread_create(&thread3, NULL, threadMinusTemp, &fixedTemp);
 
         if (result1 || result2 || result3) {
             printf("No se creó.\n");
@@ -246,9 +281,8 @@ int main() {
             exit(2);
         }
 
-    } else { // HIJO
-
-        // Cambiar a proceso B
+    } else {
+        execl("./procesoB", (char*) NULL);
     }
 }
 
@@ -257,8 +291,16 @@ int main() {
 // La salida del BME280 son valores de un ADC y cada elemento sensor se comporta de manera diferente. 
 // Por lo tanto, la temperatura deben calcularse utilizando un conjunto de parámetros de calibración.
 
-// Primero se obtienen los datos crudos de la temperatura del sensor desde los registros 0xFA hasta 0xFC.
+// Primero se obtienen los datos de calibración de la temperatura del sensor desde los registros 0xFA hasta 0xFC.
 // Cada registro tiene una longitud de 8 bits. Menos el registro 0xFA, que tiene una longitud de 4 bits de información útil.
+
+void readCalibrationData(int fd, bme280_calib_data *data) {
+    data->dig_T1 = (uint16_t)wiringPiI2CReadReg16(fd, BME280_REGISTER_DIG_T1);
+    data->dig_T2 = (int16_t)wiringPiI2CReadReg16(fd, BME280_REGISTER_DIG_T2);
+    data->dig_T3 = (int16_t)wiringPiI2CReadReg16(fd, BME280_REGISTER_DIG_T3);
+}
+
+// Una vez calibrada la temperatura, se obtienen los datos crudos del sensor, del registro BME280_REGISTER_TEMPDATA.
 
 void getRawData(int fd, bme280_raw_data *raw) {
     wiringPiI2CWrite(fd, BME280_REGISTER_TEMPDATA);
@@ -273,14 +315,10 @@ void getRawData(int fd, bme280_raw_data *raw) {
     raw->temperature = (raw->temperature | raw->txsb) >> 4;
 }
 
-// Una vez obtenidos los datos crudos, se realizan rotaciones y corrimientos para obtener 
+// Una vez obtenidos los datos crudos, se realizan rotaciones y corrimientos para obtener la temperatura calibrada
 
-// Estos parámetros se obtienen de la función readCalibrationData.
-// La función getTemperatureCalibration calcula el valor de t_fine para la temperatura.
-// La función compensateTemperature calcula la temperatura a partir del valor de t_fine.
-// La función getRawData obtiene los valores de temperatura y humedad del sensor.
-int32_t getTemperatureCalibration(bme280_calib_data *cal, int32_t adc_T)
-{
+int32_t getTemperatureCalibration(bme280_calib_data *cal, int32_t adc_T) {
+    
     int32_t var1 = ((((adc_T >> 3) - ((int32_t)cal->dig_T1 << 1))) * ((int32_t)cal->dig_T2)) >> 11;
 
     int32_t var2 = (((((adc_T >> 4) - ((int32_t)cal->dig_T1)) * ((adc_T >> 4) - ((int32_t)cal->dig_T1))) >> 12) * ((int32_t)cal->dig_T3)) >> 14;
@@ -288,15 +326,9 @@ int32_t getTemperatureCalibration(bme280_calib_data *cal, int32_t adc_T)
     return var1 + var2;
 }
 
-void readCalibrationData(int fd, bme280_calib_data *data)
-{
-    data->dig_T1 = (uint16_t)wiringPiI2CReadReg16(fd, BME280_REGISTER_DIG_T1);
-    data->dig_T2 = (int16_t)wiringPiI2CReadReg16(fd, BME280_REGISTER_DIG_T2);
-    data->dig_T3 = (int16_t)wiringPiI2CReadReg16(fd, BME280_REGISTER_DIG_T3);
-}
+// Por último, se compensa la temperatura calibrada para ser mostrada en grados Celsius
 
-float compensateTemperature(int32_t t_fine)
-{
+float compensateTemperature(int32_t t_fine) {
     float T = (t_fine * 5 + 128) >> 8;
     return T / 100;
 }
