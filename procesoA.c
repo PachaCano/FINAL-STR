@@ -30,6 +30,7 @@ int FD, ticks = 0, ticks2 = 0, ticks3 = 0;
 bool flag = false;
 bool flag2 = false;
 
+//Controlamos que los ticks 2 y 3 sólo aumenten cuando los pulsadores estén pulsados
 void isrTimer (int sig, siginfo_t *si, void *uc) {
     ticks++;
     if (flag) {
@@ -42,7 +43,6 @@ void isrTimer (int sig, siginfo_t *si, void *uc) {
 
 // Hilo que lee temperatura
 void *thread_body_1(void *arg) {
-    // printf("Temperatura  \n");
 
     while (1) {
 
@@ -78,6 +78,7 @@ void *thread_body_2(void *arg) {
     while (1) {
         pulsador = digitalRead(PULSER_PIN_PLUS);
 
+        //Si no estaba pulsado (antes), pero ahora sí
         if (pulsado == false && pulsador == 1) {
 
                 pthread_mutex_lock(&mtx);
@@ -96,8 +97,6 @@ void *thread_body_2(void *arg) {
                             break;
                         }
                     }
-                    // delay(3000);       // usar temporizador, no delay xd
-                    // digitalWrite(LED_PIN_RED, LOW);
                 }
                 
                 pthread_mutex_unlock(&mtx);
@@ -109,8 +108,8 @@ void *thread_body_2(void *arg) {
                             flag = false;
                             break;
                         }
-                    }    // delay(100) de pulsador
-            
+                    } 
+        //Si estaba pulsado (antes), y ya no
         } else if (pulsado == true && pulsador == 0) {
                 pulsado = false;
         } 
@@ -120,10 +119,9 @@ void *thread_body_2(void *arg) {
     return NULL;
 }
 
-void *thread_body_3(void *arg)
-{
+void *thread_body_3(void *arg) {
 
-bool pulsado = false;
+    bool pulsado = false;
     int pulsador = 0;
     int* ptrFixedTemp = (int*) arg;
 
@@ -148,8 +146,6 @@ bool pulsado = false;
                             break;
                         }
                     }
-                    // delay(3000);       // usar temporizador, no delay xd
-                    // digitalWrite(LED_PIN_BLUE, LOW);
                 }
                 
                 pthread_mutex_unlock(&mtx);
@@ -172,8 +168,6 @@ bool pulsado = false;
     return NULL;
 }
 
-
-
 int main() {
 
     FD = wiringPiI2CSetup(BME280_ADDRESS);
@@ -190,11 +184,13 @@ int main() {
         return 1;
     }
 
+    //Seteamos el modo de los pines
     pinMode(PULSER_PIN_MINUS, INPUT);
     pinMode(PULSER_PIN_PLUS, INPUT);
     pinMode(LED_PIN_BLUE, OUTPUT);
     pinMode(LED_PIN_RED, OUTPUT);
 
+    //Inicializamos los leds 
     digitalWrite(LED_PIN_BLUE, LOW);
     digitalWrite(LED_PIN_RED, LOW);
 
@@ -224,16 +220,9 @@ int main() {
     if (timer_settime(timerid, 0, &its, NULL) == -1)
         printf("error timer_settime");
 
-
-
     int PID = fork();
 
     if (PID != 0) { // PADRE -> 
-
-
-        
-
-        // printf("Temperatura  \n");
 
         pthread_t thread1;
         pthread_t thread2;
@@ -243,8 +232,7 @@ int main() {
         int result2 = pthread_create(&thread2, NULL, thread_body_2, &fixedTemp);
         int result3 = pthread_create(&thread3, NULL, thread_body_3, &fixedTemp);
 
-        if (result1 || result2 || result3)
-        {
+        if (result1 || result2 || result3) {
             printf("No se creó.\n");
             exit(2);
         }
@@ -253,8 +241,7 @@ int main() {
         result2 = pthread_join(thread2, NULL);
         result3 = pthread_join(thread3, NULL);
 
-        if (result1 || result2 || result3)
-        {
+        if (result1 || result2 || result3) {
             printf("The threads could not be joined.\n");
             exit(2);
         }
@@ -264,11 +251,6 @@ int main() {
         // Cambiar a proceso B
     }
 }
-
-
-
-
-
 
 // Funciones para el sensor de temperatura
 
