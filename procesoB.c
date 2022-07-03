@@ -10,7 +10,8 @@
 #include <sys/mman.h>
 #include <signal.h>
 
-#define MOTOR_PIN 7 // 7
+#define MOTOR_PIN 23 // 33
+#define MOTOR_PIN2 24 // 35
 #define MC_SIZE sizeof(int)
 
 int memoria_comp = -1;
@@ -18,36 +19,45 @@ int* ptrMemComp = -1;
 
 // Manejo de señales
 void handleMotorSignals(int signal) {
+
 	switch (signal) {
-	case SIGUSR1:
-		printf("Señal para en,cender calefacción!\n");
-		onOffCalefaccion(true);
-		break;
-	case SIGUSR2:
-		printf("Señal para apagar calefacción!\n");
-		onOffCalefaccion(false);
-		break;
-	default:
-		printf("Unsupported signal is received!\n");
+		case SIGUSR1:
+			printf("Señal para encender calefacción!\n");
+			onOffCalefaccion(true);
+			break;
+		case SIGUSR2:
+			printf("Señal para apagar calefacción!\n");
+			onOffCalefaccion(false);
+			break;
+		default:
+			printf("Unsupported signal is received!\n");
+			break;
 	}
+	
+	
 }
 
 void onOffCalefaccion(bool onOff) {
+	printf("%s calefacción\n", onOff ? "Encendiendo" : "Apagando");
 
 	if (onOff) {
 		digitalWrite(MOTOR_PIN, HIGH);
-		system("mpg321 calefaccion.mp3 --quiet &");
+		digitalWrite(MOTOR_PIN2, HIGH);
+		printf("Calefacción HIGH\n");
+		//system("mpg321 calefaccion.mp3 --quiet &");
 	} else {
 		digitalWrite(MOTOR_PIN, LOW);
-		system("mpg321 calefaccion.mp3 --quiet -R STOP");
+		digitalWrite(MOTOR_PIN2, LOW);
+		printf("Calefacción LOW\n");
+		//system("mpg321 calefaccion.mp3 --quiet -R STOP");
 	}	
 	
-	memoria_comp();
-	if (*ptrMemComp == 1) {
-		printf("Calefacción encendida\n");
-	} else {
-		printf("Calefacción apagada\n");
-	}
+	// memoriaCompartida();
+	// if (*ptrMemComp == 1) {
+	// 	printf("Calefacción encendida\n");
+	// } else {
+	// 	printf("Calefacción apagada\n");
+	// }
 }
 
 void memoriaCompartida() {
@@ -86,12 +96,19 @@ int main() {
 		return -1;
 	}
 
+	printf("Proceso B iniciado\n");
+
 	// Establecemos modo del pin
 	pinMode(MOTOR_PIN, OUTPUT);
+	pinMode(MOTOR_PIN2, OUTPUT);
 
 	// Inicializamos el motor
-	digitalWrite(MOTOR_PIN, LOW);
+	digitalWrite(MOTOR_PIN2, LOW);
 
 	signal(SIGUSR1, handleMotorSignals);
 	signal(SIGUSR2, handleMotorSignals);
+
+	while (1);
+
+	return 0;
 }

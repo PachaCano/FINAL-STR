@@ -12,6 +12,10 @@
 #include <time.h>
 #include <sys/time.h>
 #include <signal.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <string.h>
 
 #define TS 100000000 // nanosegundos.   // = 100 ms
 #define LIM_MAX_TEMP 30
@@ -94,7 +98,7 @@ void threadPlusTemp(void *arg) {
 
                 if ((*ptrFixedTemp) < LIM_MAX_TEMP) {
                     (*ptrFixedTemp)++;
-                    // printf("temperatura: %d\n", *ptrFixedTemp);
+                    printf("temperatura: %d\n", *ptrFixedTemp);
                 } else {
                     printf("SE LLEGO AL LIMITE SUPERIOR\n");
                     digitalWrite(LED_PIN_RED, HIGH);
@@ -141,7 +145,7 @@ void threadMinusTemp(void *arg) {
                 pthread_mutex_lock(&mtx);
                 if ((*ptrFixedTemp) > LIM_MIN_TEMP) {
                     (*ptrFixedTemp)--;
-                    // printf("temperatura: %d\n", *ptrFixedTemp);
+                    printf("temperatura: %d\n", *ptrFixedTemp);
                 } else {
                     printf("LIMITE INFERIOR\n");
                     digitalWrite(LED_PIN_BLUE, HIGH);
@@ -174,11 +178,13 @@ void threadMinusTemp(void *arg) {
 }
 
 void powerOnOffMotor() {
-    if (tempActual < fixedTemp) {   // Si la temperatura es menor a la fijada, se enciende el motor, es decir, se enciende la calefacción.
-        kill(PID, SIGUSR1);
+    if (tempActual > fixedTemp) {   // Si la temperatura es menor a la fijada, se enciende el motor, es decir, se enciende la calefacción.
+        kill(PID, SIGUSR2);
+        printf("PID: %d \t Señal enviada\n", PID);
         *ptrMemComp = 1;
     } else {                        // Si la temperatura es mayor a la fijada, se apaga el motor, es decir, se apaga la calefacción.
-        kill(PID, SIGUSR2);
+        kill(PID, SIGUSR1);
+        printf("PID: %d \t Señal enviada 2\n", PID);
         *ptrMemComp = 0;
     }
 }
