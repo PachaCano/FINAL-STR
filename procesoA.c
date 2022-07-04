@@ -32,7 +32,6 @@ float tempActual = 0; // Temperatura actual.
 pthread_mutex_t mtx;
 int PID = -1;
 int PID_PADRE = -1;
-int* ptrMemComp = -1;
 
 int FD, ticks = 0, ticks2 = 0, ticks3 = 0;
 bool flag = false;
@@ -266,6 +265,8 @@ int main() {
         pthread_t thread1;
         pthread_t thread2;
         pthread_t thread3;
+
+        pthread_mutex_init(&mtx, NULL);
 
         int result1 = pthread_create(&thread1, NULL, threadTemp, NULL);
         int result2 = pthread_create(&thread2, NULL, threadPlusTemp, &fixedTemp);
