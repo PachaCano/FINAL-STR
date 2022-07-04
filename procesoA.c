@@ -118,6 +118,7 @@ void threadPlusTemp(void *arg) {
                     digitalWrite(LED_PIN_RED, HIGH);
                     flag = true;
                     while (1) {
+                        //Delay de 1000 ms para hacer parpadear el led
                         if (ticks2 == 10) {
                             ticks2 = 0;
                             flag = false;
@@ -130,6 +131,8 @@ void threadPlusTemp(void *arg) {
                 pthread_mutex_unlock(&mtx);
                 pulsado = true;
                 flag = true;
+
+                //Delay de 100 ms para que, si se pulsa 2 veces en este intervalo, sólo tome uno
                 while (1) {
                         if (ticks2 == 1) {
                             ticks2 = 0;
