@@ -12,21 +12,19 @@
 
 #define MOTOR_PIN 23 // 33
 #define MOTOR_PIN2 24 // 35
-#define MC_SIZE sizeof(int)
 
-int memoria_comp = -1;
-int* ptrMemComp = -1;
+bool sonido = false;
+int a = 0;
+int PID = -1;
 
 // Manejo de señales
 void handleMotorSignals(int signal) {
 
 	switch (signal) {
 		case SIGUSR1:
-			printf("Señal para encender calefacción!\n");
 			onOffCalefaccion(true);
 			break;
 		case SIGUSR2:
-			printf("Señal para apagar calefacción!\n");
 			onOffCalefaccion(false);
 			break;
 		default:
@@ -34,60 +32,38 @@ void handleMotorSignals(int signal) {
 			break;
 	}
 	
-	
 }
 
 void onOffCalefaccion(bool onOff) {
-	printf("%s calefacción\n", onOff ? "Encendiendo" : "Apagando");
 
 	if (onOff) {
+		a = 1;
+		kill(PID, SIGUSR2);
+	
 		digitalWrite(MOTOR_PIN, HIGH);
 		digitalWrite(MOTOR_PIN2, HIGH);
-		printf("Calefacción HIGH\n");
-		//system("mpg321 calefaccion.mp3 --quiet &");
+		system("amixer set Master unmute > /dev/null &");
+		
 	} else {
+		a = 0;
+		kill(PID, SIGUSR1);
 		digitalWrite(MOTOR_PIN, LOW);
 		digitalWrite(MOTOR_PIN2, LOW);
-		printf("Calefacción LOW\n");
-		//system("mpg321 calefaccion.mp3 --quiet -R STOP");
+
+		system("amixer set Master mute > /dev/null &");
 	}	
-	
-	// memoriaCompartida();
-	// if (*ptrMemComp == 1) {
-	// 	printf("Calefacción encendida\n");
-	// } else {
-	// 	printf("Calefacción apagada\n");
-	// }
+
+	if (a == 1) {
+		printf("Calefacción encendida\n");
+	} else {
+		printf("Calefacción apagada\n");
+	}
 }
 
-void memoriaCompartida() {
 
-	// Accedemos a la memoria compartida en modo lectura
-	memoria_comp = shm_open("/shm0", O_RDWR, 0600);
+int main(int argc, char *argv[]) {
 
-	if (memoria_comp < 0)
-	{
-		fprintf(stderr, "ERROR: Falló abrir la memoria compartida: %s\n", strerror(errno));
-		return -1;
-	}
-
-	void *map = mmap(0, MC_SIZE, PROT_READ, MAP_SHARED, memoria_comp, 0);
-
-	if (map == MAP_FAILED) {
-		fprintf(stderr, "ERROR: Mapeo fallido: %s\n", strerror(errno));
-		return -1;
-	}
-
-	*ptrMemComp = (int*) map;
-
-	if (shm_unlink("/shm0") < 0) {
-		fprintf(stderr, "ERROR: Falló el cierre de la memoria compartida: %s\n", strerror(errno));
-		exit(1);
-	}
-	
-}
-
-int main() {
+	PID = atoi(argv[0]);
 
 	int res = wiringPiSetup();
 
@@ -104,6 +80,9 @@ int main() {
 
 	// Inicializamos el motor
 	digitalWrite(MOTOR_PIN2, LOW);
+
+	system("mpg321 calefaccion.mp3 -l 0 -q > /dev/null &");
+	system("amixer set Master mute > /dev/null &");
 
 	signal(SIGUSR1, handleMotorSignals);
 	signal(SIGUSR2, handleMotorSignals);

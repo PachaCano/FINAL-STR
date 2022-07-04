@@ -26,19 +26,18 @@
 #define LED_PIN_RED 1  // 12
 #define LED_PIN_BLUE 4  // 16
 
-#define MC_SIZE sizeof(int)
-int memoria_comp = -1;
-
 int fixedTemp = 20; // Temperatura que variará según los pulsadores.
 float tempActual = 0; // Temperatura actual.
 
 pthread_mutex_t mtx;
 int PID = -1;
+int PID_PADRE = -1;
 int* ptrMemComp = -1;
 
 int FD, ticks = 0, ticks2 = 0, ticks3 = 0;
 bool flag = false;
 bool flag2 = false;
+bool onOff = false;
 
 // Controlamos que los ticks 2 y 3 sólo aumenten cuando los pulsadores estén pulsados
 void isrTimer (int sig, siginfo_t *si, void *uc) {
@@ -47,6 +46,22 @@ void isrTimer (int sig, siginfo_t *si, void *uc) {
         ticks2++;
     if (flag2) 
         ticks3++;
+}
+
+void handleSignals(int signal) {
+
+	switch (signal) {
+		case SIGUSR1:
+            onOff = false;
+			break;
+		case SIGUSR2:
+            onOff = true;
+			break;
+		default:
+			printf("Unsupported signal is received!\n");
+			break;
+	}
+	
 }
 
 // Hilo que lee temperatura
@@ -179,35 +194,17 @@ void threadMinusTemp(void *arg) {
 
 void powerOnOffMotor() {
     if (tempActual > fixedTemp) {   // Si la temperatura es menor a la fijada, se enciende el motor, es decir, se enciende la calefacción.
-        kill(PID, SIGUSR2);
-        printf("PID: %d \t Señal enviada\n", PID);
-        *ptrMemComp = 1;
+        if (onOff == true) 
+            kill(PID, SIGUSR2);     // Señal para apagar la calefacción.
     } else {                        // Si la temperatura es mayor a la fijada, se apaga el motor, es decir, se apaga la calefacción.
-        kill(PID, SIGUSR1);
-        printf("PID: %d \t Señal enviada 2\n", PID);
-        *ptrMemComp = 0;
+        if (onOff == false)
+            kill(PID, SIGUSR1);     // Señal para encender la calefacción.
     }
-}
-
-void initMemoryComp() {
-    memoria_comp = shm_open("/shm0", O_CREAT | O_RDWR, 0600);
-    if (memoria_comp == -1) {
-        printf("Error al crear la memoria compartida\n");
-        exit(1);
-    }
-    if (ftruncate(memoria_comp, MC_SIZE) == -1) {
-        printf("Error al truncar la memoria compartida\n");
-        exit(1);
-    }
-    void *ptr = mmap(0, MC_SIZE, PROT_WRITE, MAP_SHARED, memoria_comp, 0);
-    if (ptr == MAP_FAILED) {
-        printf("Error al mapear la memoria compartida\n");
-        exit(1);
-    }
-    ptrMemComp = (int*) ptr;
 }
 
 int main() {
+
+    PID_PADRE = getpid();
 
     FD = wiringPiI2CSetup(BME280_ADDRESS);
 
@@ -261,9 +258,10 @@ int main() {
 
     PID = fork();
 
+    signal(SIGUSR1, handleSignals);
+    signal(SIGUSR2, handleSignals);
+
     if (PID != 0) { // PADRE -> 
-    
-        initMemoryComp();
 
         pthread_t thread1;
         pthread_t thread2;
@@ -288,7 +286,9 @@ int main() {
         }
 
     } else {
-        execl("./procesoB", (char*) NULL);
+        char str[5];
+        sprintf(str, "%d", PID_PADRE);
+        execl("./procesoB", str, 0);
     }
 }
 
