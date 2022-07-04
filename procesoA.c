@@ -269,6 +269,8 @@ int main() {
         pthread_t thread2;
         pthread_t thread3;
 
+        pthread_mutex_init(&mtx, NULL);
+
         int result1 = pthread_create(&thread1, NULL, threadTemp, NULL);
         int result2 = pthread_create(&thread2, NULL, threadPlusTemp, &fixedTemp);
         int result3 = pthread_create(&thread3, NULL, threadMinusTemp, &fixedTemp);
